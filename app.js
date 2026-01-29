@@ -1,17 +1,7 @@
-/* STILL Player Web UI (UI-only / demo)
-   - Multiple cassettes (switchable)
-   - NFC ID per side (editable)
-   - Side A/B: "Dzēst" moves track back to Library
-   - Library: "Dzēst" deletes from SD (demo: removes from list)
-   - Lock cassette disables editing (add/remove/reorder/NFC edits)
-   - Mobile-friendly: +A/+B buttons instead of drag&drop from library
-   - Drag within A/B lists for ordering (bonus for desktop + long-press mobile)
-*/
-
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-const STORAGE_KEY = "still_ui_state_v2";
+const STORAGE_KEY = "still_ui_state_v3";
 
 const defaultState = {
   auth: { user: "still", pass: "still", loggedIn: false },
@@ -19,7 +9,10 @@ const defaultState = {
   library: [],
   cassettes: [],
   currentCassetteId: null,
-  firstLoginShown: false
+  firstLoginShown: false,
+
+  // Battery (UI demo)
+  batteryPct: 74
 };
 
 let state = loadState();
@@ -34,11 +27,9 @@ function loadState(){
     return structuredClone(defaultState);
   }
 }
-
 function saveState(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
-
 function deepMerge(base, override){
   for(const k of Object.keys(override || {})){
     if(override[k] && typeof override[k] === "object" && !Array.isArray(override[k])){
@@ -49,7 +40,6 @@ function deepMerge(base, override){
   }
   return base;
 }
-
 function uid(){
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
@@ -71,7 +61,6 @@ function toast(msg, kind="info"){
   $("#toasts").appendChild(el);
   setTimeout(() => { if(el.isConnected) el.remove(); }, 3200);
 }
-
 function escapeHtml(s){
   return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 }
@@ -96,19 +85,20 @@ function ensureAtLeastOneCassette(){
     saveState();
   }
 }
-
 function getCurrentCassette(){
   return state.cassettes.find(c => c.id === state.currentCassetteId) || state.cassettes[0];
 }
-
 function setCurrentCassette(id){
   if(!state.cassettes.some(c => c.id === id)) return;
   state.currentCassetteId = id;
   saveState();
   rerenderAll();
 }
+function isLocked(){
+  return !!getCurrentCassette().locked;
+}
 
-/* ---------- Auth views ---------- */
+/* ---------- Views ---------- */
 function showLogin(){
   $("#view-login").classList.remove("hidden");
   $("#view-app").classList.add("hidden");
@@ -117,6 +107,40 @@ function showApp(){
   $("#view-login").classList.add("hidden");
   $("#view-app").classList.remove("hidden");
 }
+
+/* ---------- Battery UI ---------- */
+function setBattery(pct){
+  const n = clamp(Math.round(Number(pct) || 0), 0, 100);
+  state.batteryPct = n;
+  saveState();
+  renderBattery();
+}
+
+function renderBattery(){
+  const pct = clamp(state.batteryPct, 0, 100);
+
+  const fill = $("#batteryFill");
+  const txt = $("#batteryPct");
+  if(!fill || !txt) return;
+
+  fill.style.width = `${pct}%`;
+  txt.textContent = `${pct}%`;
+
+  // color rule:
+  // >15% green; <=15% red
+  const isLow = pct <= 15;
+  fill.style.backgroundColor = isLow
+    ? "rgba(248,113,113,.85)"   // red-ish
+    : "rgba(34,197,94,.85)";    // green-ish
+
+  // Optional: soften if extremely low
+  // (still red, just more “urgent”)
+  if(pct <= 5){
+    fill.style.backgroundColor = "rgba(239,68,68,.92)";
+  }
+}
+
+function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
 
 /* ---------- Render header/meta ---------- */
 function renderHeader(){
@@ -136,22 +160,19 @@ function renderHeader(){
 
   $("#cassetteMetaLine").textContent =
     `${c.name} · A:${c.sideA.length}/10 · B:${c.sideB.length}/10`;
+
+  renderBattery();
 }
 
 /* ---------- Track row ---------- */
 function trackRow(t, where){
-  // where: "A" | "B" | "LIB"
   const row = document.createElement("div");
   row.className = "track";
-  row.draggable = (where !== "LIB"); // reorder only on A/B
+  row.draggable = (where !== "LIB"); // reorder only A/B
   row.dataset.trackId = t.id;
   row.dataset.from = where;
 
   const isLib = where === "LIB";
-
-  // Actions:
-  // - Library: +A +B Dzēst (SD delete)
-  // - Side A/B: Dzēst = move back to library
   const actionsHTML = isLib
     ? `
       <button class="btn btn-primary btn-sm btn-chip" data-act="addA">+A</button>
@@ -170,25 +191,20 @@ function trackRow(t, where){
         <div class="text-xs muted truncate">${escapeHtml(t.artist)} · ${escapeHtml(t.len)}</div>
       </div>
     </div>
-
     <div class="actions flex items-center gap-2 shrink-0">
       ${actionsHTML}
     </div>
   `;
 
-  // Drag for reordering within same list
   if(!isLib){
     row.addEventListener("dragstart", (e) => {
       if(isLocked()) { e.preventDefault(); return; }
       e.dataTransfer.setData("text/plain", JSON.stringify({
-        trackId: t.id,
-        from: where,
-        kind: "reorder"
+        trackId: t.id, from: where, kind: "reorder"
       }));
       e.dataTransfer.effectAllowed = "move";
       row.classList.add("opacity-70");
     });
-
     row.addEventListener("dragend", () => row.classList.remove("opacity-70"));
   }
 
@@ -198,23 +214,15 @@ function trackRow(t, where){
         toast("Kasete ir LOCK režīmā.", "err");
         return;
       }
-
       const act = btn.dataset.act;
-
       if(act === "addA") return addFromLibraryToSide(t.id, "A");
       if(act === "addB") return addFromLibraryToSide(t.id, "B");
-
       if(act === "removeToLib") return moveFromSideToLibrary(where, t.id);
-
       if(act === "deleteSd") return deleteFromSd(t.id);
     });
   });
 
   return row;
-}
-
-function isLocked(){
-  return !!getCurrentCassette().locked;
 }
 
 /* ---------- Render lists/counts/NFC ---------- */
@@ -230,29 +238,22 @@ function renderCountsAndNfc(){
   $("#libraryCount").textContent = `${state.library.length} dziesmas`;
   $("#libraryEmpty").style.display = state.library.length ? "none" : "block";
 
-  // NFC inputs
   $("#nfcA").value = c.nfcA || "";
   $("#nfcB").value = c.nfcB || "";
 
-  // Disable NFC edits if locked
   $("#nfcA").disabled = c.locked;
   $("#nfcB").disabled = c.locked;
-  $("#nfcA").classList.toggle("is-locked", c.locked);
-  $("#nfcB").classList.toggle("is-locked", c.locked);
 }
 
 function renderLists(){
   const c = getCurrentCassette();
 
-  // Side A
   $("#listA").innerHTML = "";
   c.sideA.forEach(t => $("#listA").appendChild(trackRow(t, "A")));
 
-  // Side B
   $("#listB").innerHTML = "";
   c.sideB.forEach(t => $("#listB").appendChild(trackRow(t, "B")));
 
-  // Library (search filter)
   const q = ($("#searchLibrary").value || "").trim().toLowerCase();
   const filtered = state.library.filter(t =>
     t.title.toLowerCase().includes(q) ||
@@ -267,7 +268,6 @@ function renderLists(){
 function renderCassetteList(){
   const c = getCurrentCassette();
 
-  // Mobile select
   const sel = $("#cassetteSelect");
   sel.innerHTML = "";
   state.cassettes.forEach(cs => {
@@ -278,7 +278,6 @@ function renderCassetteList(){
     sel.appendChild(opt);
   });
 
-  // Desktop list
   const list = $("#cassetteList");
   list.innerHTML = "";
   state.cassettes.forEach(cs => {
@@ -290,7 +289,9 @@ function renderCassetteList(){
           <div class="font-semibold truncate">${escapeHtml(cs.name)}</div>
           ${cs.locked ? `<span class="pill pill-lock">LOCK</span>` : ""}
         </div>
-        <div class="text-xs muted truncate">A:${cs.sideA.length}/10 · B:${cs.sideB.length}/10 · NFC A:${escapeHtml(cs.nfcA || "—")} · NFC B:${escapeHtml(cs.nfcB || "—")}</div>
+        <div class="text-xs muted truncate">
+          A:${cs.sideA.length}/10 · B:${cs.sideB.length}/10 · NFC A:${escapeHtml(cs.nfcA || "—")} · NFC B:${escapeHtml(cs.nfcB || "—")}
+        </div>
       </div>
       <div class="text-xs muted shrink-0">Atvērt</div>
     `;
@@ -307,13 +308,10 @@ function addFromLibraryToSide(trackId, side){
     toast(`Side ${side} ir pilns (10 dziesmas).`, "err");
     return;
   }
-
   const idx = state.library.findIndex(t => t.id === trackId);
   if(idx === -1) return;
-
   const track = state.library.splice(idx, 1)[0];
   target.push(track);
-
   saveState();
   rerenderAll();
 }
@@ -323,21 +321,17 @@ function moveFromSideToLibrary(side, trackId){
   const arr = side === "A" ? c.sideA : c.sideB;
   const idx = arr.findIndex(t => t.id === trackId);
   if(idx === -1) return;
-
   const track = arr.splice(idx, 1)[0];
   state.library.unshift(track);
-
   saveState();
   rerenderAll();
   toast("Dziesma pārvietota uz Library.", "ok");
 }
 
 function deleteFromSd(trackId){
-  // UI demo: remove from library list (simulate SD delete)
   const idx = state.library.findIndex(t => t.id === trackId);
   if(idx === -1) return;
   const t = state.library[idx];
-
   state.library.splice(idx, 1);
   saveState();
   rerenderAll();
@@ -349,15 +343,11 @@ function clearSide(side){
     toast("Kasete ir LOCK režīmā.", "err");
     return;
   }
-
   const c = getCurrentCassette();
   const arr = side === "A" ? c.sideA : c.sideB;
-
-  // Move all back to library
   state.library.unshift(...arr);
   if(side === "A") c.sideA = [];
   else c.sideB = [];
-
   saveState();
   rerenderAll();
   toast(`Puse ${side} notīrīta (pārvietots uz Library).`, "ok");
@@ -392,14 +382,12 @@ function wireReorderDropzone(containerEl, side){
     const draggingIndex = arr.findIndex(t => t.id === payload.trackId);
     if(draggingIndex === -1) return;
 
-    // Find drop target track by walking up DOM
     const targetEl = e.target.closest(".track");
     if(!targetEl) return;
     const targetId = targetEl.dataset.trackId;
     const targetIndex = arr.findIndex(t => t.id === targetId);
     if(targetIndex === -1) return;
 
-    // Move
     const [item] = arr.splice(draggingIndex, 1);
     arr.splice(targetIndex, 0, item);
 
@@ -422,7 +410,7 @@ function closeModals(){
   $$("#modalSettings, #modalRename, #modalNewCassette").forEach(m => m.classList.add("hidden"));
 }
 
-/* ---------- Demo data ---------- */
+/* ---------- Demo songs ---------- */
 function addDemoSongs(){
   const seed = [
     ["Klusums", "STILL", "3:12"],
@@ -452,54 +440,26 @@ function rerenderAll(){
   renderCassetteList();
   renderCountsAndNfc();
   renderLists();
-  applyLockedUI();
 }
 
-function applyLockedUI(){
-  const locked = isLocked();
-
-  // Disable actions that mutate
-  $("#btnRenameCassette").disabled = false; // rename allowed even locked? (var atstāt) — atstājam atļautu.
-  $("#btnToggleLock").textContent = locked ? "Unlock" : "Lock";
-
-  // Disable clear buttons if locked
-  $$("[data-action='clearSide']").forEach(btn => {
-    btn.disabled = locked;
-    btn.classList.toggle("opacity-50", locked);
-  });
-
-  // “lock” vibe on cassette editor lists
-  const editorCard = $(".card:nth-of-type(2)"); // rough, but works in this simple structure
-  // safer: toggle on dropzones
-  $("#dropA").classList.toggle("is-locked", locked);
-  $("#dropB").classList.toggle("is-locked", locked);
-
-  // Also disable Library add if locked (so you can’t modify cassette)
-  $("#dropLibrary").classList.toggle("is-locked", false); // library itself still scrollable
-}
-
-/* ---------- Wire UI ---------- */
+/* ---------- Init ---------- */
 function init(){
-  // Login defaults
   $("#loginUser").value = state.auth.user || "still";
   $("#loginPass").value = "";
 
   $("#btnLogin").addEventListener("click", () => {
     const u = $("#loginUser").value.trim();
     const p = $("#loginPass").value;
-
     const ok = (u === state.auth.user && p === state.auth.pass);
     if(!ok){
       toast("Nepareizs lietotājvārds vai parole.", "err");
       return;
     }
-
     state.auth.loggedIn = true;
     saveState();
     showApp();
     rerenderAll();
 
-    // Show settings once if still/still
     const isDefault = (state.auth.user === "still" && state.auth.pass === "still");
     if(isDefault && !state.firstLoginShown){
       state.firstLoginShown = true;
@@ -519,7 +479,6 @@ function init(){
     toast("Iziets.", "ok");
   });
 
-  // Settings
   $("#btnOpenSettings").addEventListener("click", () => {
     $("#settingsDeviceName").value = state.deviceName;
     $("#settingsNewPass").value = "";
@@ -535,14 +494,8 @@ function init(){
     state.deviceName = name;
 
     if(np1 || np2){
-      if(np1.length < 4){
-        toast("Parolei ieteicams vismaz 4 simboli.", "err");
-        return;
-      }
-      if(np1 !== np2){
-        toast("Paroles nesakrīt.", "err");
-        return;
-      }
+      if(np1.length < 4){ toast("Parolei ieteicams vismaz 4 simboli.", "err"); return; }
+      if(np1 !== np2){ toast("Paroles nesakrīt.", "err"); return; }
       state.auth.pass = np1;
       toast("Parole nomainīta (UI demo).", "ok");
     }
@@ -553,7 +506,6 @@ function init(){
     toast("Saglabāts.", "ok");
   });
 
-  // New cassette
   $("#btnNewCassette").addEventListener("click", () => {
     $("#newCassetteName").value = "";
     $("#newCassetteNfcA").value = "";
@@ -568,13 +520,7 @@ function init(){
 
     const id = uid();
     state.cassettes.unshift({
-      id,
-      name,
-      locked: false,
-      nfcA,
-      nfcB,
-      sideA: [],
-      sideB: []
+      id, name, locked: false, nfcA, nfcB, sideA: [], sideB: []
     });
     state.currentCassetteId = id;
 
@@ -584,7 +530,6 @@ function init(){
     toast("Kasete izveidota.", "ok");
   });
 
-  // Rename cassette
   $("#btnRenameCassette").addEventListener("click", () => {
     const c = getCurrentCassette();
     $("#cassetteNameInput").value = c.name || "";
@@ -600,19 +545,15 @@ function init(){
     toast("Nosaukums saglabāts.", "ok");
   });
 
-  // Lock toggle
   $("#btnToggleLock").addEventListener("click", () => toggleLock());
 
-  // Modal close
   $("#modalBackdrop").addEventListener("click", closeModals);
   $$("[data-close-modal]").forEach(btn => btn.addEventListener("click", closeModals));
 
-  // Clear side buttons
   $$("[data-action='clearSide']").forEach(btn => {
     btn.addEventListener("click", () => clearSide(btn.dataset.side));
   });
 
-  // Library
   $("#btnAddMockSongs").addEventListener("click", addDemoSongs);
   $("#btnUploadMock").addEventListener("click", () => {
     const t = { id: uid(), title: "Jauns uploads", artist: "Unknown", len: "3:00" };
@@ -621,9 +562,9 @@ function init(){
     rerenderAll();
     toast("Simulēts upload: 1 dziesma Library.", "ok");
   });
+
   $("#searchLibrary").addEventListener("input", renderLists);
 
-  // NFC edit handlers (save on input)
   $("#nfcA").addEventListener("input", () => {
     if(isLocked()) return;
     const c = getCurrentCassette();
@@ -641,16 +582,16 @@ function init(){
     renderHeader();
   });
 
-  // Cassette select (mobile)
-  $("#cassetteSelect").addEventListener("change", (e) => {
-    setCurrentCassette(e.target.value);
-  });
+  $("#cassetteSelect").addEventListener("change", (e) => setCurrentCassette(e.target.value));
 
-  // Reorder dropzones for A/B lists
-  wireReorderDropzone($("#listA"), "A");
-  wireReorderDropzone($("#listB"), "B");
+  // Battery demo slider
+  const slider = $("#batterySlider");
+  if(slider){
+    slider.value = String(state.batteryPct ?? 74);
+    slider.addEventListener("input", () => setBattery(slider.value));
+    renderBattery();
+  }
 
-  // Initial view
   if(state.auth.loggedIn) showApp();
   else showLogin();
 
