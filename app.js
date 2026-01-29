@@ -120,25 +120,30 @@ function renderBattery(){
   const pct = clamp(state.batteryPct, 0, 100);
 
   const fill = $("#batteryFill");
-  const txt = $("#batteryPct");
-  if(!fill || !txt) return;
+  const txtIn = $("#batteryPctIn");
+  if(!fill || !txtIn) return;
 
   fill.style.width = `${pct}%`;
-  txt.textContent = `${pct}%`;
+  txtIn.textContent = `${pct}%`;
 
-  // color rule:
   // >15% green; <=15% red
   const isLow = pct <= 15;
   fill.style.backgroundColor = isLow
-    ? "rgba(248,113,113,.85)"   // red-ish
-    : "rgba(34,197,94,.85)";    // green-ish
+    ? "rgba(248,113,113,.85)"
+    : "rgba(34,197,94,.85)";
 
-  // Optional: soften if extremely low
-  // (still red, just more “urgent”)
+  // optional “urgent” at very low
   if(pct <= 5){
     fill.style.backgroundColor = "rgba(239,68,68,.92)";
   }
+
+  // add/remove class for optional styling
+  const bat = fill.closest(".battery");
+  if(bat){
+    bat.classList.toggle("low", isLow);
+  }
 }
+
 
 function clamp(x, a, b){ return Math.max(a, Math.min(b, x)); }
 
