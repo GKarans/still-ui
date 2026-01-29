@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="lv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STILL Player — Web UI</title>
+
+  <!-- Tailwind (CDN) tikai izskatam -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Inter font (nav obligāti) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <!-- Toasts -->
+  <div id="toasts" class="fixed z-50 top-4 left-1/2 -translate-x-1/2 w-[min(92vw,560px)] space-y-2"></div>
+
+  <!-- LOGIN VIEW -->
+  <section id="view-login" class="min-h-screen flex items-center justify-center p-5">
+    <div class="w-full max-w-md">
+      <div class="rounded-3xl bg-slate-900/60 border border-white/10 shadow-xl p-6">
+        <div class="flex items-center gap-3">
+          <div class="h-11 w-11 rounded-2xl bg-white/10 flex items-center justify-center">
+            <span class="text-xl">▦</span>
+          </div>
+          <div>
+            <h1 class="text-xl font-semibold tracking-tight">STILL Player</h1>
+            <p class="text-sm text-slate-300">Lokāls Web UI · tikai pārvaldībai</p>
+          </div>
+        </div>
+
+        <div class="mt-6 space-y-3">
+          <label class="block">
+            <span class="text-sm text-slate-200">Lietotājvārds</span>
+            <input id="loginUser" class="input" placeholder="still" autocomplete="username" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-200">Parole</span>
+            <input id="loginPass" class="input" placeholder="still" type="password" autocomplete="current-password" />
+          </label>
+
+          <button id="btnLogin" class="btn btn-primary w-full mt-2">
+            Ieiet
+          </button>
+
+          <div class="rounded-2xl bg-white/5 border border-white/10 p-4 mt-4">
+            <p class="text-sm text-slate-200 font-medium">Pirmais login</p>
+            <p class="text-xs text-slate-300 mt-1">
+              Noklusējums: <span class="font-semibold">still / still</span> · pēc tam nomaini iestatījumos.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-xs text-slate-400 mt-4 text-center">
+        Atver lokālo adresi ierīces tīklā (piem. 192.168.x.x)
+      </p>
+    </div>
+  </section>
+
+  <!-- APP VIEW -->
+  <section id="view-app" class="hidden min-h-screen">
+    <!-- Top bar -->
+    <header class="sticky top-0 z-40 backdrop-blur bg-slate-950/70 border-b border-white/10">
+      <div class="mx-auto w-full max-w-6xl px-4 py-3 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="h-10 w-10 rounded-2xl bg-white/10 flex items-center justify-center shrink-0">▶</div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 min-w-0">
+              <h2 id="deviceName" class="font-semibold truncate">STILL</h2>
+              <span class="pill">Local</span>
+            </div>
+            <p class="text-xs text-slate-400 truncate">
+              Aktīvā kasete: <span id="currentCassetteLabel" class="text-slate-200">—</span>
+              <span id="lockPill" class="pill ml-2 hidden">LOCK</span>
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button id="btnOpenSettings" class="btn btn-ghost">Iestatījumi</button>
+          <button id="btnLogout" class="btn btn-ghost">Iziet</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto w-full max-w-6xl px-4 py-6 grid grid-cols-12 gap-4">
+      <!-- LEFT: Cassette list + cassette editor -->
+      <section class="col-span-12 lg:col-span-7 space-y-4">
+        <!-- Cassette list -->
+        <div class="card">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h3 class="text-lg font-semibold">Kasetes</h3>
+              <p class="text-sm text-slate-300">
+                Vari izveidot vairākas kasetes un pārslēgties starp tām.
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button id="btnNewCassette" class="btn btn-primary">+ Jauna kasete</button>
+            </div>
+          </div>
+
+          <!-- Mobile: select -->
+          <div class="mt-4 sm:hidden">
+            <label class="block">
+              <span class="text-sm text-slate-200">Izvēlies kaseti</span>
+              <select id="cassetteSelect" class="input"></select>
+            </label>
+          </div>
+
+          <!-- Desktop: list -->
+          <div id="cassetteList" class="mt-4 hidden sm:block space-y-2"></div>
+
+          <div class="mt-4 rounded-2xl bg-white/5 border border-white/10 p-4 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-xs text-slate-400">Aktīvā kasete</p>
+              <p id="cassetteMetaLine" class="text-sm font-semibold truncate">—</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button id="btnRenameCassette" class="btn btn-ghost btn-sm">Pārdēvēt</button>
+              <button id="btnToggleLock" class="btn btn-ghost btn-sm">Lock</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cassette editor -->
+        <div class="card">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <h3 class="text-lg font-semibold">Kasetes skats</h3>
+              <p class="text-sm text-slate-300">
+                2 puses · katrā stingri <span class="font-semibold">10 dziesmas</span>. Pievieno no Library ar <span class="kbd">+A</span>/<span class="kbd">+B</span>.
+                A/B pusēs <span class="kbd">Dzēst</span> pārvieto atpakaļ uz Library.
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- Side A -->
+            <div class="panel">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="pill pill-side">Side A</span>
+                    <span id="countA" class="text-xs text-slate-300">0/10</span>
+                  </div>
+
+                  <label class="block mt-2">
+                    <span class="text-xs text-slate-400">NFC ID (A)</span>
+                    <input id="nfcA" class="input input-sm mt-1" placeholder="piem. 04A1B2C3D4" />
+                  </label>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <button class="btn btn-ghost btn-sm" data-action="clearSide" data-side="A">Notīrīt</button>
+                </div>
+              </div>
+
+              <div id="dropA" class="dropzone list-scroll mt-3" data-drop-side="A">
+                <div id="listA" class="space-y-2"></div>
+                <div id="emptyA" class="emptyhint">Side A tukšs</div>
+              </div>
+            </div>
+
+            <!-- Side B -->
+            <div class="panel">
+              <div class="flex items-start justify-between gap-2">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="pill pill-side">Side B</span>
+                    <span id="countB" class="text-xs text-slate-300">0/10</span>
+                  </div>
+
+                  <label class="block mt-2">
+                    <span class="text-xs text-slate-400">NFC ID (B)</span>
+                    <input id="nfcB" class="input input-sm mt-1" placeholder="piem. 04D4C3B2A1" />
+                  </label>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <button class="btn btn-ghost btn-sm" data-action="clearSide" data-side="B">Notīrīt</button>
+                </div>
+              </div>
+
+              <div id="dropB" class="dropzone list-scroll mt-3" data-drop-side="B">
+                <div id="listB" class="space-y-2"></div>
+                <div id="emptyB" class="emptyhint">Side B tukšs</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 rounded-2xl bg-white/5 border border-white/10 p-4">
+            <p class="text-sm text-slate-200 font-semibold">Svarīgi</p>
+            <ul class="mt-2 text-sm text-slate-300 list-disc pl-5 space-y-1">
+              <li><span class="font-semibold">Lock</span> režīmā: nav iespējams pievienot/dzēst/pārbīdīt dziesmas un rediģēt NFC ID.</li>
+              <li>Library <span class="kbd">Dzēst</span> = dzēst no SD (UI demo — reāli tikai no saraksta).</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT: Library -->
+      <aside class="col-span-12 lg:col-span-5 space-y-4">
+        <div class="card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h3 class="text-lg font-semibold">Library</h3>
+              <p class="text-sm text-slate-300">
+                Dziesmas, kas nav kasetē. Pievieno uz A/B ar pogām.
+              </p>
+            </div>
+            <button id="btnAddMockSongs" class="btn btn-ghost">+ Demo</button>
+          </div>
+
+          <div class="mt-4 flex gap-2">
+            <input id="searchLibrary" class="input" placeholder="Meklēt dziesmu..." />
+            <button id="btnUploadMock" class="btn btn-primary">Upload (demo)</button>
+          </div>
+
+          <div id="dropLibrary" class="dropzone list-scroll mt-4" data-drop-side="LIB">
+            <div id="libraryList" class="space-y-2"></div>
+            <div id="libraryEmpty" class="emptyhint">Library tukšs. Spied “+ Demo”.</div>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between text-xs text-slate-400">
+            <span>Mobilais: pievieno ar +A/+B. Secību maini A/B pusē ar vilkšanu.</span>
+            <span id="libraryCount">0</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="text-lg font-semibold">UX, kas palīdz mobilajā</h3>
+          <ul class="mt-3 space-y-2 text-sm text-slate-300 list-disc pl-5">
+            <li><span class="text-slate-100 font-medium">Pogas +A/+B</span> Library rindā → nav jāvelk.</li>
+            <li><span class="text-slate-100 font-medium">Vilkšana tikai secībai</span> (A/B pusēs).</li>
+            <li><span class="text-slate-100 font-medium">Lock</span> kad viss gatavs → nejauši neko nesabojā.</li>
+            <li><span class="text-slate-100 font-medium">NFC ID rediģēšana</span> tieši pie katras puses.</li>
+          </ul>
+        </div>
+      </aside>
+    </main>
+  </section>
+
+  <!-- MODALS -->
+  <div id="modalBackdrop" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"></div>
+
+  <!-- Settings modal -->
+  <div id="modalSettings" class="hidden fixed inset-0 z-50 p-4 flex items-center justify-center">
+    <div class="w-full max-w-lg rounded-3xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold">Iestatījumi</h3>
+          <p class="text-sm text-slate-300">UI-only (localStorage)</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-close-modal>✕</button>
+      </div>
+
+      <div class="mt-5 space-y-4">
+        <label class="block">
+          <span class="text-sm text-slate-200">Ierīces nosaukums</span>
+          <input id="settingsDeviceName" class="input" placeholder="STILL" />
+        </label>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-sm text-slate-200">Jauna parole</span>
+            <input id="settingsNewPass" class="input" type="password" placeholder="••••••••" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-200">Atkārtot paroli</span>
+            <input id="settingsNewPass2" class="input" type="password" placeholder="••••••••" />
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button class="btn btn-ghost" data-close-modal>Atcelt</button>
+          <button id="btnSaveSettings" class="btn btn-primary">Saglabāt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- New cassette modal -->
+  <div id="modalNewCassette" class="hidden fixed inset-0 z-50 p-4 flex items-center justify-center">
+    <div class="w-full max-w-lg rounded-3xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold">Jauna kasete</h3>
+          <p class="text-sm text-slate-300">Ievadi nosaukumu un NFC ID katrai pusei.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-close-modal>✕</button>
+      </div>
+
+      <div class="mt-5 space-y-3">
+        <label class="block">
+          <span class="text-sm text-slate-200">Kasetes nosaukums</span>
+          <input id="newCassetteName" class="input" placeholder="Piem.: Road Trip 01" />
+        </label>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label class="block">
+            <span class="text-sm text-slate-200">NFC ID (A)</span>
+            <input id="newCassetteNfcA" class="input" placeholder="04A1B2C3D4" />
+          </label>
+          <label class="block">
+            <span class="text-sm text-slate-200">NFC ID (B)</span>
+            <input id="newCassetteNfcB" class="input" placeholder="04D4C3B2A1" />
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button class="btn btn-ghost" data-close-modal>Atcelt</button>
+          <button id="btnCreateCassette" class="btn btn-primary">Izveidot</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rename cassette modal -->
+  <div id="modalRename" class="hidden fixed inset-0 z-50 p-4 flex items-center justify-center">
+    <div class="w-full max-w-lg rounded-3xl bg-slate-900 border border-white/10 shadow-2xl p-6">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold">Pārdēvēt kaseti</h3>
+          <p class="text-sm text-slate-300">Tikai nosaukums (NFC rediģē pie pusēm).</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-close-modal>✕</button>
+      </div>
+
+      <div class="mt-5 space-y-3">
+        <label class="block">
+          <span class="text-sm text-slate-200">Nosaukums</span>
+          <input id="cassetteNameInput" class="input" placeholder="Kasete" />
+        </label>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button class="btn btn-ghost" data-close-modal>Atcelt</button>
+          <button id="btnSaveCassetteName" class="btn btn-primary">Saglabāt</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
