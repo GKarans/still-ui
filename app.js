@@ -22,6 +22,14 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+const isMobileUI = (() => {
+  // drošā kombinācija: touch + mazāks ekrāns
+  const hasTouch = window.matchMedia("(pointer: coarse)").matches;
+  const smallScreen = window.matchMedia("(max-width: 768px)").matches;
+  return hasTouch || smallScreen;
+})();
+
+
 const STORAGE_KEY = "still_ui_state_v4";
 
 const defaultState = {
@@ -202,9 +210,18 @@ function trackRow(t, where) {
   row.className = "track";
   row.dataset.trackId = t.id;
   row.dataset.from = where;
-  row.draggable = (where !== "LIB");
 
   const isLib = where === "LIB";
+  row.draggable = !isLib; // desktop drag
+
+  // 🔑 BULTAS TIKAI MOBILAJĀ
+  const showOrderButtons = isMobileUI && !isLib;
+
+  const orderButtonsHTML = showOrderButtons ? `
+    <button class="btn btn-ghost btn-sm btn-chip" data-act="moveUp" title="Augšup">↑</button>
+    <button class="btn btn-ghost btn-sm btn-chip" data-act="moveDown" title="Lejup">↓</button>
+  ` : "";
+
   const actionsHTML = isLib
     ? `
       <button class="btn btn-primary btn-sm btn-chip" data-act="addA">+A</button>
@@ -212,12 +229,15 @@ function trackRow(t, where) {
       <button class="btn btn-ghost btn-sm btn-chip" data-act="deleteSd">Dzēst</button>
     `
     : `
+      ${orderButtonsHTML}
       <button class="btn btn-ghost btn-sm btn-chip" data-act="removeToLib">Dzēst</button>
     `;
 
   row.innerHTML = `
     <div class="meta flex items-center gap-3 min-w-0 flex-1">
-      <span class="drag-handle" title="${isLib ? "" : "Velc, lai mainītu secību"}">${isLib ? "♪" : "⋮⋮"}</span>
+      <span class="drag-handle" title="${isLib ? "" : isMobileUI ? "Secību maini ar ↑↓" : "Velc ar peli"}">
+        ${isLib ? "♪" : "⋮⋮"}
+      </span>
       <div class="text min-w-0 flex-1">
         <div class="font-semibold truncate">${escapeHtml(t.title)}</div>
         <div class="text-xs muted truncate">${escapeHtml(t.artist)} · ${escapeHtml(t.len)}</div>
@@ -228,29 +248,40 @@ function trackRow(t, where) {
     </div>
   `;
 
+  // Desktop drag reorder
   if (!isLib) {
     row.addEventListener("dragstart", (e) => {
       if (isLocked()) { e.preventDefault(); return; }
-      e.dataTransfer.setData("text/plain", JSON.stringify({ trackId: t.id, from: where, kind: "reorder" }));
+      e.dataTransfer.setData(
+        "text/plain",
+        JSON.stringify({ trackId: t.id, from: where, kind: "reorder" })
+      );
       e.dataTransfer.effectAllowed = "move";
       row.classList.add("opacity-70");
     });
     row.addEventListener("dragend", () => row.classList.remove("opacity-70"));
   }
 
+  // Actions
   row.querySelectorAll("button").forEach(btn => {
     btn.addEventListener("click", () => {
       if (isLocked()) { toast("Kasete ir LOCK režīmā.", "err"); return; }
       const act = btn.dataset.act;
+
       if (act === "addA") return addFromLibraryToSide(t.id, "A");
       if (act === "addB") return addFromLibraryToSide(t.id, "B");
-      if (act === "removeToLib") return moveFromSideToLibrary(where, t.id);
       if (act === "deleteSd") return deleteFromSd(t.id);
+      if (act === "removeToLib") return moveFromSideToLibrary(where, t.id);
+
+      if (act === "moveUp") return moveTrack(where, t.id, -1);
+      if (act === "moveDown") return moveTrack(where, t.id, +1);
     });
   });
 
   return row;
 }
+
+
 
 /* ------------------ Track mutations ------------------ */
 function addFromLibraryToSide(trackId, side) {
@@ -285,6 +316,23 @@ function deleteFromSd(trackId) {
   rerenderAll();
   toast(`Dzēsts no SD (demo): ${t.title}`, "ok");
 }
+function moveTrack(side, trackId, delta) {
+  const c = getCurrentCassette();
+  const arr = side === "A" ? c.sideA : c.sideB;
+
+  const i = arr.findIndex(x => x.id === trackId);
+  if (i === -1) return;
+
+  const j = i + delta;
+  if (j < 0 || j >= arr.length) return;
+
+  // swap
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+
+  saveState();
+  rerenderAll();
+}
+
 function clearSide(side) {
   if (isLocked()) { toast("Kasete ir LOCK režīmā.", "err"); return; }
   const c = getCurrentCassette();
